@@ -1,16 +1,16 @@
-GCM Library for Go
+FCM Library for Go
 --
 
-Provides the following functionality for Google Cloud Messaging:
+Provides the following functionality for Firebase Cloud Messaging:
 
 1. Sending messages.
 2. Listening to receiving messages.
 
-Documentation: http://godoc.org/github.com/google/go-gcm
+Documentation: http://godoc.org/github.com/mcilloni/go-fcm
 
 ## Installation
 
-    $ go get github.com/google/go-gcm
+    $ go get github.com/mcilloni/go-fcm
 
 ## Status
 
