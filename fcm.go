@@ -323,8 +323,6 @@ func (c *xmppFcmClient) listen(h MessageHandler, stop <-chan bool) error {
 				c.messages.Unlock()
 			case CCSNack:
 				// nack for a sent message, retry if retryable error, bubble up otherwise.
-				fmt.Println("Got error", cm.Error)
-				fmt.Printf("%+v\n", *cm)
 				if retryableErrors[cm.Error] {
 					c.retryMessage(*cm, h)
 				} else {
@@ -445,7 +443,7 @@ func newExponentialBackoff() *exponentialBackoff {
 
 // Returns true if not over the retries limit
 func (eb exponentialBackoff) sendAnother() bool {
-	return eb.currentDelay <= eb.b.Max
+	return eb.currentDelay < eb.b.Max && eb.b.Attempt() < 3
 }
 
 // Set the minumim delay for backoff
@@ -457,7 +455,7 @@ func (eb *exponentialBackoff) setMin(min time.Duration) {
 }
 
 // Wait for the current value of backoff
-func (eb exponentialBackoff) wait() {
+func (eb *exponentialBackoff) wait() {
 	time.Sleep(eb.currentDelay)
 	eb.currentDelay = eb.b.Duration()
 }
@@ -501,30 +499,27 @@ func sendHttp(apiKey string, m HttpMessage, c httpClient, b backoffProvider) (*H
 		if err != nil {
 			return fcmResp, fmt.Errorf("error sending request to FCM HTTP server: %v", err)
 		}
-		if len(fcmResp.Results) > 0 {
-			doRetry, toRetry, err := checkResults(fcmResp.Results, localTo, *resultsState)
-			multicastId = fcmResp.MulticastId
-			if err != nil {
-				return fcmResp, fmt.Errorf("error checking FCM results: %v", err)
-			}
-			if doRetry {
-				retryAfter, err := time.ParseDuration(c.getRetryAfter())
-				if err != nil {
-					b.setMin(retryAfter)
-				}
-				localTo = make([]string, len(toRetry))
-				copy(localTo, toRetry)
-				if m.RegistrationIds != nil {
-					m.RegistrationIds = toRetry
-				}
-				b.wait()
-				continue
-			} else {
-				break
-			}
-		} else {
+		if len(fcmResp.Results) == 0 {
 			break
 		}
+		doRetry, toRetry, err := checkResults(fcmResp.Results, localTo, *resultsState)
+		multicastId = fcmResp.MulticastId
+		if err != nil {
+			return fcmResp, fmt.Errorf("error checking FCM results: %v", err)
+		}
+		if !doRetry {
+			break
+		}
+		retryAfter, err := time.ParseDuration(c.getRetryAfter())
+		if err != nil {
+			b.setMin(retryAfter)
+		}
+		localTo = make([]string, len(toRetry))
+		copy(localTo, toRetry)
+		if m.RegistrationIds != nil {
+			m.RegistrationIds = toRetry
+		}
+		b.wait()
 	}
 	// if it was multicast, reconstruct response in case there have been retries
 	if len(targets) > 1 {
