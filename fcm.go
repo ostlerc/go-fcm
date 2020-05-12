@@ -171,7 +171,6 @@ type httpClient interface {
 
 // httpFcmClient is a client for the Fcm Http Connection Server.
 type httpFcmClient struct {
-	FcmURL     string
 	HttpClient *http.Client
 	retryAfter string
 }
@@ -183,7 +182,7 @@ func (c *httpFcmClient) send(apiKey string, m HttpMessage) (*HttpResponse, error
 		return nil, fmt.Errorf("error marshalling message>%v", err)
 	}
 	debug("sending", string(bs))
-	req, err := http.NewRequest("POST", c.FcmURL, bytes.NewReader(bs))
+	req, err := http.NewRequest("POST", httpAddress, bytes.NewReader(bs))
 	if err != nil {
 		return nil, fmt.Errorf("error creating request>%v", err)
 	}
@@ -324,6 +323,8 @@ func (c *xmppFcmClient) listen(h MessageHandler, stop <-chan bool) error {
 				c.messages.Unlock()
 			case CCSNack:
 				// nack for a sent message, retry if retryable error, bubble up otherwise.
+				fmt.Println("Got error", cm.Error)
+				fmt.Printf("%+v\n", *cm)
 				if retryableErrors[cm.Error] {
 					c.retryMessage(*cm, h)
 				} else {
@@ -461,11 +462,25 @@ func (eb exponentialBackoff) wait() {
 	eb.currentDelay = eb.b.Duration()
 }
 
+type Client struct {
+	HttpClient *http.Client
+}
+
+// NewClient returns an fcm client
+func NewClient(c *http.Client) *Client {
+	if c.Timeout == 0 {
+		c.Timeout = time.Second * 30
+	}
+	return &Client{
+		HttpClient: c,
+	}
+}
+
 // Send a message using the HTTP FCM connection server.
-func SendHttp(apiKey string, m HttpMessage) (*HttpResponse, error) {
-	c := &httpFcmClient{httpAddress, &http.Client{}, "0"}
+func (c *Client) SendHttp(apiKey string, msg HttpMessage) (*HttpResponse, error) {
 	b := newExponentialBackoff()
-	return sendHttp(apiKey, m, c, b)
+	c2 := &httpFcmClient{c.HttpClient, "0"}
+	return sendHttp(apiKey, msg, c2, b)
 }
 
 // sendHttp sends an http message using exponential backoff, handling multicast replies.
